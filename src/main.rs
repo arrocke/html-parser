@@ -50,6 +50,9 @@ enum TokenizerState<'a> {
     BeforeAttributeName { input: &'a str, tag: Tag },
     AttributeName { input: &'a str, tag: Tag, attribute: Attribute },
     AfterAttributeName { input: &'a str, tag: Tag, attribute: Attribute },
+    BeforeAttributeValue { input: &'a str, tag: Tag ,attribute: Attribute },
+    AttributeValueDoubleQuoted { input: &'a str, tag: Tag ,attribute: Attribute },
+    AfterAttributeValueQuoted { input: &'a str, tag: Tag },
     EOF
 }
 
@@ -122,7 +125,7 @@ impl<'a> TokenizerState<'a> {
                     Some('\t' | '\u{0a}' | '\u{0c}' | ' ' | '/' | '>') | None => {
                         TokenizerState::AfterAttributeName { input, tag, attribute }
                     },
-                    Some('=') => todo!(),
+                    Some('=') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
                     Some('\0') => todo!(),
                     Some('"' | '\'' | '<') => todo!(),
                     Some(ch) => {
@@ -136,7 +139,7 @@ impl<'a> TokenizerState<'a> {
                     None => todo!(),
                     Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::AfterAttributeName { input: &input[1..], tag, attribute },
                     Some('/') => todo!(),
-                    Some('=') => todo!(),
+                    Some('=') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
                     Some('>') => {
                         tag.add_attribute(attribute);
                         tokens.push_back(Token::Tag(tag));
@@ -149,6 +152,42 @@ impl<'a> TokenizerState<'a> {
                     }
                 }
             }
+            TokenizerState::BeforeAttributeValue { input, tag, attribute } => {
+                match input.chars().nth(0) {
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
+                    Some('"') => TokenizerState::AttributeValueDoubleQuoted { input: &input[1..], tag, attribute },
+                    Some('\'') => todo!(),
+                    Some('>') => todo!(),
+                    _ => todo!(),
+                }
+            }
+            TokenizerState::AttributeValueDoubleQuoted { input, mut tag, mut attribute } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('"') => {
+                        tag.add_attribute(attribute);
+                        TokenizerState::AfterAttributeValueQuoted { input: &input[1..], tag }
+                    }
+                    Some('&') => todo!(),
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        attribute.value.push(ch);
+                        TokenizerState::AttributeValueDoubleQuoted { input: &input[1..], tag, attribute }
+                    }
+                }
+            }
+            TokenizerState::AfterAttributeValueQuoted { input, tag } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
+                    Some('/') => todo!(),
+                    Some('>') => {
+                        tokens.push_back(Token::Tag(tag));
+                        TokenizerState::Data { input: &input[1..] }
+                    }
+                    Some(_) => todo!()
+                }
+            },
             TokenizerState::EOF => {
                 panic!("Cannot call TokenizerState.step with EOF state");
             }
@@ -161,7 +200,7 @@ fn main() {
 
     let mut tokens: VecDeque<Token> = VecDeque::new();
     let mut state = TokenizerState::Data {
-        input: "<input disabled data-test>"
+        input: "<input disabled type=\"checkbox\">"
     };
 
     let mut step = 1;
