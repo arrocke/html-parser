@@ -22,6 +22,7 @@ impl Attribute {
 struct Tag {
     kind: TagKind,
     name: String,
+    self_closing: bool,
     attributes: Vec<Attribute>
 }
 
@@ -30,6 +31,7 @@ impl Tag {
         Tag {
             kind,
             name: String::new(),
+            self_closing: false,
             attributes: vec![]
         }
     }
@@ -47,6 +49,7 @@ enum TokenizerState<'a> {
     Data { input: &'a str },
     TagOpen { input: &'a str },
     TagName { input: &'a str, tag: Tag },
+    SelfClosingStartTag { input: &'a str, tag: Tag },
     BeforeAttributeName { input: &'a str, tag: Tag },
     AttributeName { input: &'a str, tag: Tag, attribute: Attribute },
     AfterAttributeName { input: &'a str, tag: Tag, attribute: Attribute },
@@ -96,10 +99,8 @@ impl<'a> TokenizerState<'a> {
             TokenizerState::TagName { input, mut tag } => {
                 match input.chars().nth(0) {
                     None => todo!(),
-                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => {
-                        TokenizerState::BeforeAttributeName { input: &input[1..], tag }
-                    },
-                    Some('/') => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
+                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
                     Some('>') => {
                         tokens.push_back(Token::Tag(tag));
                         TokenizerState::Data { input: &input[1..] }
@@ -111,10 +112,26 @@ impl<'a> TokenizerState<'a> {
                     }
                 }
             }
-            TokenizerState::BeforeAttributeName { input, mut tag } => {
+            TokenizerState::SelfClosingStartTag { input, mut tag } => {
                 match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('>') => {
+                        tag.self_closing = true;
+                        tokens.push_back(Token::Tag(tag));
+                        TokenizerState::Data { input: &input[1..] }
+                    }
+                    Some(_) => todo!()
+                }
+            }
+            TokenizerState::BeforeAttributeName { input, tag } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
                     Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
-                    Some('/' | '>') | None => todo!(),
+                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
+                    Some('>') => {
+                        tokens.push_back(Token::Tag(tag));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
                     Some('=') => todo!(),
                     Some(_) => {
                         let attribute = Attribute::new();
@@ -140,7 +157,7 @@ impl<'a> TokenizerState<'a> {
                 match input.chars().nth(0) {
                     None => todo!(),
                     Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::AfterAttributeName { input: &input[1..], tag, attribute },
-                    Some('/') => todo!(),
+                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
                     Some('=') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
                     Some('>') => {
                         tag.add_attribute(attribute);
@@ -218,7 +235,7 @@ impl<'a> TokenizerState<'a> {
                 match input.chars().nth(0) {
                     None => todo!(),
                     Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
-                    Some('/') => todo!(),
+                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
                     Some('>') => {
                         tokens.push_back(Token::Tag(tag));
                         TokenizerState::Data { input: &input[1..] }
@@ -238,7 +255,7 @@ fn main() {
 
     let mut tokens: VecDeque<Token> = VecDeque::new();
     let mut state = TokenizerState::Data {
-        input: "<input disabled type=\"checkbox\" name='valid' id=check>"
+        input: "<div><input id=check disabled type=\"checkbox\" name='valid'/>"
     };
 
     let mut step = 1;
