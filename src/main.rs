@@ -48,6 +48,7 @@ impl Tag {
 enum TokenizerState<'a> {
     Data { input: &'a str },
     TagOpen { input: &'a str },
+    EndTagOpen { input: &'a str },
     TagName { input: &'a str, tag: Tag },
     SelfClosingStartTag { input: &'a str, tag: Tag },
     BeforeAttributeName { input: &'a str, tag: Tag },
@@ -90,9 +91,16 @@ impl<'a> TokenizerState<'a> {
                 match input.chars().nth(0) {
                     None => todo!(),
                     Some('!') => todo!(),
-                    Some('/') => todo!(),
+                    Some('/') => TokenizerState::EndTagOpen { input: &input[1..] },
                     Some('?') => todo!(),
                     Some(ch) if matches!(ch, 'a'..'z' | 'A'..'Z') => TokenizerState::TagName { input, tag: Tag::new(TagKind::Start) },
+                    Some(_) => todo!()
+                }
+            }
+            TokenizerState::EndTagOpen { input } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some(ch) if matches!(ch, 'a'..'z' | 'A'..'Z') => TokenizerState::TagName { input, tag: Tag::new(TagKind::End) },
                     Some(_) => todo!()
                 }
             }
@@ -255,7 +263,7 @@ fn main() {
 
     let mut tokens: VecDeque<Token> = VecDeque::new();
     let mut state = TokenizerState::Data {
-        input: "<div><input id=check disabled type=\"checkbox\" name='valid'/>"
+        input: "<div><input id=check disabled type=\"checkbox\" name='valid'/></div>"
     };
 
     let mut step = 1;
