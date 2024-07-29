@@ -53,6 +53,7 @@ enum TokenizerState<'a> {
     BeforeAttributeValue { input: &'a str, tag: Tag ,attribute: Attribute },
     AttributeValueDoubleQuoted { input: &'a str, tag: Tag ,attribute: Attribute },
     AttributeValueSingleQuoted { input: &'a str, tag: Tag ,attribute: Attribute },
+    AttributeValueUnquoted { input: &'a str, tag: Tag ,attribute: Attribute },
     AfterAttributeValueQuoted { input: &'a str, tag: Tag },
     EOF
 }
@@ -159,7 +160,7 @@ impl<'a> TokenizerState<'a> {
                     Some('"') => TokenizerState::AttributeValueDoubleQuoted { input: &input[1..], tag, attribute },
                     Some('\'') => TokenizerState::AttributeValueSingleQuoted { input: &input[1..], tag, attribute },
                     Some('>') => todo!(),
-                    _ => todo!(),
+                    _ => TokenizerState::AttributeValueUnquoted{ input, tag, attribute },
                 }
             }
             TokenizerState::AttributeValueDoubleQuoted { input, mut tag, mut attribute } => {
@@ -192,6 +193,27 @@ impl<'a> TokenizerState<'a> {
                     }
                 }
             }
+            TokenizerState::AttributeValueUnquoted { input, mut tag, mut attribute } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => {
+                        tag.add_attribute(attribute);
+                        TokenizerState::BeforeAttributeName { input: &input[1..], tag }
+                    },
+                    Some('&') => todo!(),
+                    Some('>') => {
+                        tag.add_attribute(attribute);
+                        tokens.push_back(Token::Tag(tag));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
+                    Some('\0') => todo!(),
+                    Some('"' | '\'' | '<' | '=' | '`') => todo!(),
+                    Some(ch) => {
+                        attribute.value.push(ch);
+                        TokenizerState::AttributeValueUnquoted { input: &input[1..], tag, attribute }
+                    }
+                }
+            }
             TokenizerState::AfterAttributeValueQuoted { input, tag } => {
                 match input.chars().nth(0) {
                     None => todo!(),
@@ -216,7 +238,7 @@ fn main() {
 
     let mut tokens: VecDeque<Token> = VecDeque::new();
     let mut state = TokenizerState::Data {
-        input: "<input disabled type=\"checkbox\" name='valid'>"
+        input: "<input disabled type=\"checkbox\" name='valid' id=check>"
     };
 
     let mut step = 1;
