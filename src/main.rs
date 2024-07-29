@@ -1,4 +1,4 @@
-use std::{ascii, collections::VecDeque};
+use std::{collections::VecDeque, fmt};
 
 #[derive(Debug)]
 enum TagKind {
@@ -6,7 +6,6 @@ enum TagKind {
     End
 }
 
-#[derive(Debug)]
 struct Attribute {
     name: String,
     value: String
@@ -18,12 +17,40 @@ impl Attribute {
     }
 }
 
-#[derive(Debug)]
+impl fmt::Debug for Attribute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.value == "" {
+            write!(f, "\"{}\"", self.name)
+        } else {
+            write!(f, "\"{}\"=\"{}\"", self.name, self.value)
+        }
+    }
+}
+
 struct Tag {
     kind: TagKind,
     name: String,
     self_closing: bool,
     attributes: Vec<Attribute>
+}
+
+impl fmt::Debug for Tag {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<")?;
+        if matches!(self.kind, TagKind::End) {
+            write!(f, "/")?;
+        }
+        write!(f, "{}", self.name)?;
+        if self.attributes.len() > 0 {
+            let attrs = self.attributes.iter().map(|attr| format!("{:?}", attr)).collect::<Vec<String>>().join(" ");
+            write!(f, " {}", attrs)?;
+        }
+        if self.self_closing {
+            write!(f, " />")
+        } else {
+            write!(f, ">")
+        }
+    }
 }
 
 impl Tag {
@@ -62,11 +89,20 @@ enum TokenizerState<'a> {
     EOF
 }
 
-#[derive(Debug)]
 enum Token {
     EOF,
     Char(char),
     Tag(Tag)
+}
+
+impl fmt::Debug for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Token::EOF => write!(f, "EOF"),
+            Token::Char(ch) => write!(f, "{}", ch),
+            Token::Tag(tag) => write!(f, "{:?}", tag),
+        }
+    }
 }
 
 impl<'a> TokenizerState<'a> {
