@@ -1,5 +1,23 @@
 use std::{collections::VecDeque, fmt};
 
+fn main() {
+    println!("start");
+
+    let mut tokens: VecDeque<Token> = VecDeque::new();
+    let mut state = TokenizerState::Data {
+        input: "<!DOCTYPE HTML PUBLIC \"public\" \"system\"><div><input id=check disabled type=\"checkbox\" name='valid'/></div>"
+    };
+
+    let mut step = 1;
+    while !matches!(state, TokenizerState::EOF) {
+        state = state.step(&mut tokens);
+        println!("{}: {:?}", step, state);
+        step += 1;
+    }
+
+    println!("{:?}", tokens);
+}
+
 #[derive(Debug)]
 enum TagKind {
     Start,
@@ -53,7 +71,7 @@ impl fmt::Debug for Tag {
     }
 }
 
-impl Tag {
+impl Tag  {
     fn new(kind: TagKind) -> Tag {
         Tag {
             kind,
@@ -72,18 +90,53 @@ impl Tag {
 }
 
 #[derive(Debug)]
+struct Doctype {
+    name: String,
+    public_identifier: Option<String>,
+    system_identifier: Option<String>,
+    force_quirks: bool
+}
+
+impl Doctype {
+    fn new() ->Doctype {
+        Doctype {
+            name: String::new(),
+            public_identifier: None,
+            system_identifier: None,
+            force_quirks: false
+        }
+    }
+}
+
+#[derive(Debug)]
 enum TokenizerState<'a> {
     AfterAttributeName { input: &'a str, tag: Tag, attribute: Attribute },
     AfterAttributeValueQuoted { input: &'a str, tag: Tag },
+    AfterDoctypeName { input: &'a str, doctype: Doctype },
+    AfterDoctypePublicKeyword { input:&'a str, doctype: Doctype },
+    AfterDoctypeSystemKeyword { input:&'a str, doctype: Doctype },
+    AfterDoctypePublicIdentifier { input:&'a str, doctype: Doctype },
+    AfterDoctypeSystemIdentifier { input:&'a str, doctype: Doctype },
     AttributeName { input: &'a str, tag: Tag, attribute: Attribute },
     AttributeValueDoubleQuoted { input: &'a str, tag: Tag ,attribute: Attribute },
     AttributeValueSingleQuoted { input: &'a str, tag: Tag ,attribute: Attribute },
     AttributeValueUnquoted { input: &'a str, tag: Tag ,attribute: Attribute },
     BeforeAttributeName { input: &'a str, tag: Tag },
     BeforeAttributeValue { input: &'a str, tag: Tag ,attribute: Attribute },
+    BeforeDoctypeName { input: &'a str },
+    BeforeDoctypePublicIdentifier { input: &'a str, doctype: Doctype },
+    BeforeDoctypeSystemIdentifier { input: &'a str, doctype: Doctype },
+    BetweenDoctypePublicAndSystemIdentifiers { input: &'a str, doctype: Doctype },
     Data { input: &'a str },
+    Doctype { input: &'a str },
+    DoctypeName { input: &'a str, doctype: Doctype },
+    DoctypePublicIdentifierDoubleQuoted { input: &'a str, doctype: Doctype },
+    DoctypePublicIdentifierSingleQuoted { input: &'a str, doctype: Doctype },
+    DoctypeSystemIdentifierDoubleQuoted { input: &'a str, doctype: Doctype },
+    DoctypeSystemIdentifierSingleQuoted { input: &'a str, doctype: Doctype },
     EndTagOpen { input: &'a str },
     EOF,
+    MarkupDeclarationOpen { input: &'a str },
     SelfClosingStartTag { input: &'a str, tag: Tag },
     TagName { input: &'a str, tag: Tag },
     TagOpen { input: &'a str },
@@ -92,7 +145,8 @@ enum TokenizerState<'a> {
 enum Token {
     EOF,
     Char(char),
-    Tag(Tag)
+    Tag(Tag),
+    Doctype(Doctype)
 }
 
 impl fmt::Debug for Token {
@@ -101,6 +155,7 @@ impl fmt::Debug for Token {
             Token::EOF => write!(f, "EOF"),
             Token::Char(ch) => write!(f, "{}", ch),
             Token::Tag(tag) => write!(f, "{:?}", tag),
+            Token::Doctype(doctype) => write!(f, "{:?}", doctype),
         }
     }
 }
@@ -136,6 +191,80 @@ impl<'a> TokenizerState<'a> {
                         TokenizerState::Data { input: &input[1..] }
                     }
                     Some(_) => todo!()
+                }
+            }
+            TokenizerState::AfterDoctypeName { input, doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::AfterDoctypeName { input: &input[1..], doctype },
+                    Some('>') => { 
+                        tokens.push_back(Token::Doctype(doctype));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
+                    _ => {
+                        if "PUBLIC" == &input[0..6].to_ascii_uppercase() {
+                            TokenizerState::AfterDoctypePublicKeyword { input:&input[6..], doctype }
+                        } else if "SYSTEM" == &input[0..6].to_ascii_uppercase() {
+                            TokenizerState::AfterDoctypeSystemKeyword { input:&input[6..], doctype }
+                        } else {
+                            todo!()
+                        }
+                    }
+                }
+            }
+            TokenizerState::AfterDoctypePublicKeyword { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeDoctypePublicIdentifier { input: &input[1..], doctype },
+                    Some('"') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypePublicIdentifierDoubleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('\'') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypePublicIdentifierSingleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('>') => todo!(),
+                    _ => todo!()
+                }
+            }
+            TokenizerState::AfterDoctypePublicIdentifier { input, doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BetweenDoctypePublicAndSystemIdentifiers { input: &input[1..], doctype },
+                    Some('>') => {
+                        tokens.push_back(Token::Doctype(doctype));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
+                    Some('"' | '\'') => todo!(),
+                    _ => todo!()
+                }
+            }
+            TokenizerState::AfterDoctypeSystemKeyword { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeDoctypeSystemIdentifier { input: &input[1..], doctype },
+                    Some('"') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypeSystemIdentifierDoubleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('\'') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypeSystemIdentifierSingleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('>') => todo!(),
+                    _ => todo!()
+                }
+            }
+            TokenizerState::AfterDoctypeSystemIdentifier { input, doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::AfterDoctypeSystemIdentifier { input: &input[1..], doctype },
+                    Some('>') => {
+                        tokens.push_back(Token::Doctype(doctype));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
+                    _ => todo!()
                 }
             }
             TokenizerState::AttributeName { input, tag, mut attribute } => {
@@ -228,6 +357,70 @@ impl<'a> TokenizerState<'a> {
                     _ => TokenizerState::AttributeValueUnquoted{ input, tag, attribute },
                 }
             }
+            TokenizerState::BeforeDoctypeName { input } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeDoctypeName { input: &input[1..] },
+                    Some('>') => todo!(),
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        let mut doctype = Doctype::new();
+                        doctype.name.push(ch.to_ascii_lowercase());
+                        TokenizerState::DoctypeName { input: &input[1..], doctype }
+                    }
+                }
+            }
+            TokenizerState::BeforeDoctypePublicIdentifier { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeDoctypePublicIdentifier { input: &input[1..], doctype },
+                    Some('"') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypePublicIdentifierDoubleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('\'') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypePublicIdentifierSingleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('>') => todo!(),
+                    _ => todo!()
+                }
+            }
+            TokenizerState::BeforeDoctypeSystemIdentifier { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeDoctypeSystemIdentifier { input: &input[1..], doctype },
+                    Some('"') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypeSystemIdentifierDoubleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('\'') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypeSystemIdentifierSingleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('>') => todo!(),
+                    _ => todo!()
+                }
+            }
+            TokenizerState::BetweenDoctypePublicAndSystemIdentifiers { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BetweenDoctypePublicAndSystemIdentifiers { input: &input[1..], doctype },
+                    Some('>') => {
+                        tokens.push_back(Token::Doctype(doctype));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
+                    Some('"') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypeSystemIdentifierDoubleQuoted { input: &input[1..], doctype }
+                    }
+                    Some('\'') => {
+                        doctype.system_identifier = Some(String::new());
+                        TokenizerState::DoctypeSystemIdentifierSingleQuoted { input: &input[1..], doctype }
+                    }
+                    _ => todo!()
+                }
+            }
             TokenizerState::Data { input } => {
                 match input.chars().nth(0) {
                     None => {
@@ -243,6 +436,77 @@ impl<'a> TokenizerState<'a> {
                     }
                 }
             }
+            TokenizerState::Doctype { input } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeDoctypeName { input: &input[1..] },
+                    Some('>') => TokenizerState::BeforeDoctypeName { input },
+                    _ => todo!()
+                }
+            }
+            TokenizerState::DoctypeName { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::AfterDoctypeName { input: &input[1..], doctype },
+                    Some('>') => { 
+                        tokens.push_back(Token::Doctype(doctype));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        doctype.name.push(ch.to_ascii_lowercase());
+                        TokenizerState::DoctypeName { input: &input[1..], doctype }
+                    }
+                }
+            }
+            TokenizerState::DoctypePublicIdentifierDoubleQuoted { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('"') => TokenizerState::AfterDoctypePublicIdentifier { input: &input[1..], doctype },
+                    Some('>') => todo!(),
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        doctype.public_identifier.unwrap().push(ch);
+                        TokenizerState::DoctypePublicIdentifierDoubleQuoted { input: &input[1..], doctype }
+                    }
+                }
+            }
+            TokenizerState::DoctypePublicIdentifierSingleQuoted { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\'') => TokenizerState::AfterDoctypePublicIdentifier { input: &input[1..], doctype },
+                    Some('>') => todo!(),
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        doctype.public_identifier.unwrap().push(ch);
+                        TokenizerState::DoctypePublicIdentifierSingleQuoted { input: &input[1..], doctype }
+                    }
+                }
+            }
+            TokenizerState::DoctypeSystemIdentifierDoubleQuoted { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('"') => TokenizerState::AfterDoctypeSystemIdentifier { input: &input[1..], doctype },
+                    Some('>') => todo!(),
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        doctype.system_identifier.unwrap().push(ch);
+                        TokenizerState::DoctypeSystemIdentifierDoubleQuoted { input: &input[1..], doctype }
+                    }
+                }
+            }
+            TokenizerState::DoctypeSystemIdentifierSingleQuoted { input, mut doctype } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\'') => TokenizerState::AfterDoctypeSystemIdentifier { input: &input[1..], doctype },
+                    Some('>') => todo!(),
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        doctype.system_identifier.unwrap().push(ch);
+                        TokenizerState::DoctypeSystemIdentifierSingleQuoted { input: &input[1..], doctype }
+                    }
+                }
+            }
             TokenizerState::EndTagOpen { input } => {
                 match input.chars().nth(0) {
                     None => todo!(),
@@ -252,6 +516,17 @@ impl<'a> TokenizerState<'a> {
             }
             TokenizerState::EOF => {
                 panic!("Cannot call TokenizerState.step with EOF state");
+            }
+            TokenizerState::MarkupDeclarationOpen { input } => {
+                if "--" == &input[0..2] {
+                    todo!()
+                } else if "DOCTYPE" == &input[0..7].to_uppercase() {
+                    TokenizerState::Doctype { input: &input[7..] }
+                } else if "[CDATA[" == &input[0..7] {
+                    todo!()
+                } else {
+                    todo!()
+                }
             }
             TokenizerState::SelfClosingStartTag { input, mut tag } => {
                 match input.chars().nth(0) {
@@ -283,7 +558,7 @@ impl<'a> TokenizerState<'a> {
             TokenizerState::TagOpen { input } => {
                 match input.chars().nth(0) {
                     None => todo!(),
-                    Some('!') => todo!(),
+                    Some('!') => TokenizerState::MarkupDeclarationOpen { input: &input[1..] } ,
                     Some('/') => TokenizerState::EndTagOpen { input: &input[1..] },
                     Some('?') => todo!(),
                     Some(ch) if matches!(ch, 'a'..'z' | 'A'..'Z') => TokenizerState::TagName { input, tag: Tag::new(TagKind::Start) },
@@ -292,22 +567,4 @@ impl<'a> TokenizerState<'a> {
             }
         }
     }
-}
-
-fn main() {
-    println!("start");
-
-    let mut tokens: VecDeque<Token> = VecDeque::new();
-    let mut state = TokenizerState::Data {
-        input: "<div><input id=check disabled type=\"checkbox\" name='valid'/></div>"
-    };
-
-    let mut step = 1;
-    while !matches!(state, TokenizerState::EOF) {
-        state = state.step(&mut tokens);
-        println!("{}: {:?}", step, state);
-        step += 1;
-    }
-
-    println!("{:?}", tokens);
 }
