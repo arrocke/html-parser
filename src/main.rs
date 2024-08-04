@@ -73,20 +73,20 @@ impl Tag {
 
 #[derive(Debug)]
 enum TokenizerState<'a> {
-    Data { input: &'a str },
-    TagOpen { input: &'a str },
-    EndTagOpen { input: &'a str },
-    TagName { input: &'a str, tag: Tag },
-    SelfClosingStartTag { input: &'a str, tag: Tag },
-    BeforeAttributeName { input: &'a str, tag: Tag },
-    AttributeName { input: &'a str, tag: Tag, attribute: Attribute },
     AfterAttributeName { input: &'a str, tag: Tag, attribute: Attribute },
-    BeforeAttributeValue { input: &'a str, tag: Tag ,attribute: Attribute },
+    AfterAttributeValueQuoted { input: &'a str, tag: Tag },
+    AttributeName { input: &'a str, tag: Tag, attribute: Attribute },
     AttributeValueDoubleQuoted { input: &'a str, tag: Tag ,attribute: Attribute },
     AttributeValueSingleQuoted { input: &'a str, tag: Tag ,attribute: Attribute },
     AttributeValueUnquoted { input: &'a str, tag: Tag ,attribute: Attribute },
-    AfterAttributeValueQuoted { input: &'a str, tag: Tag },
-    EOF
+    BeforeAttributeName { input: &'a str, tag: Tag },
+    BeforeAttributeValue { input: &'a str, tag: Tag ,attribute: Attribute },
+    Data { input: &'a str },
+    EndTagOpen { input: &'a str },
+    EOF,
+    SelfClosingStartTag { input: &'a str, tag: Tag },
+    TagName { input: &'a str, tag: Tag },
+    TagOpen { input: &'a str },
 }
 
 enum Token {
@@ -108,95 +108,6 @@ impl fmt::Debug for Token {
 impl<'a> TokenizerState<'a> {
     fn step(self, tokens: &mut VecDeque<Token>) -> TokenizerState<'a> {
         match self {
-            TokenizerState::Data { input } => {
-                match input.chars().nth(0) {
-                    None => {
-                        tokens.push_back(Token::EOF);
-                        TokenizerState::EOF
-                    },
-                    Some('&') => todo!(),
-                    Some('<') => TokenizerState::TagOpen { input: &input[1..] },
-                    Some('\0') => todo!(),
-                    Some(ch) => {
-                        tokens.push_back(Token::Char(ch));
-                        TokenizerState::Data { input: &input[1..] }
-                    }
-                }
-            }
-            TokenizerState::TagOpen { input } => {
-                match input.chars().nth(0) {
-                    None => todo!(),
-                    Some('!') => todo!(),
-                    Some('/') => TokenizerState::EndTagOpen { input: &input[1..] },
-                    Some('?') => todo!(),
-                    Some(ch) if matches!(ch, 'a'..'z' | 'A'..'Z') => TokenizerState::TagName { input, tag: Tag::new(TagKind::Start) },
-                    Some(_) => todo!()
-                }
-            }
-            TokenizerState::EndTagOpen { input } => {
-                match input.chars().nth(0) {
-                    None => todo!(),
-                    Some(ch) if matches!(ch, 'a'..'z' | 'A'..'Z') => TokenizerState::TagName { input, tag: Tag::new(TagKind::End) },
-                    Some(_) => todo!()
-                }
-            }
-            TokenizerState::TagName { input, mut tag } => {
-                match input.chars().nth(0) {
-                    None => todo!(),
-                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
-                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
-                    Some('>') => {
-                        tokens.push_back(Token::Tag(tag));
-                        TokenizerState::Data { input: &input[1..] }
-                    },
-                    Some('\0') => todo!(),
-                    Some(ch) => {
-                        tag.name.push(ch.to_ascii_lowercase());
-                        TokenizerState::TagName { input: &input[1..], tag }
-                    }
-                }
-            }
-            TokenizerState::SelfClosingStartTag { input, mut tag } => {
-                match input.chars().nth(0) {
-                    None => todo!(),
-                    Some('>') => {
-                        tag.self_closing = true;
-                        tokens.push_back(Token::Tag(tag));
-                        TokenizerState::Data { input: &input[1..] }
-                    }
-                    Some(_) => todo!()
-                }
-            }
-            TokenizerState::BeforeAttributeName { input, tag } => {
-                match input.chars().nth(0) {
-                    None => todo!(),
-                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
-                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
-                    Some('>') => {
-                        tokens.push_back(Token::Tag(tag));
-                        TokenizerState::Data { input: &input[1..] }
-                    },
-                    Some('=') => todo!(),
-                    Some(_) => {
-                        let attribute = Attribute::new();
-                        TokenizerState::AttributeName { input, tag, attribute }
-                    }
-                }
-            },
-            TokenizerState::AttributeName { input, tag, mut attribute } => {
-                match input.chars().nth(0) { 
-                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ' | '/' | '>') | None => {
-                        TokenizerState::AfterAttributeName { input, tag, attribute }
-                    },
-                    Some('=') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
-                    Some('\0') => todo!(),
-                    Some('"' | '\'' | '<') => todo!(),
-                    Some(ch) => {
-                        attribute.name.push(ch);
-                        TokenizerState::AttributeName { input: &input[1..], tag, attribute }
-                    }
-                }
-            }
             TokenizerState::AfterAttributeName { input, mut tag, attribute } => {
                 match input.chars().nth(0) {
                     None => todo!(),
@@ -215,13 +126,30 @@ impl<'a> TokenizerState<'a> {
                     }
                 }
             }
-            TokenizerState::BeforeAttributeValue { input, tag, attribute } => {
+            TokenizerState::AfterAttributeValueQuoted { input, tag } => {
                 match input.chars().nth(0) {
-                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
-                    Some('"') => TokenizerState::AttributeValueDoubleQuoted { input: &input[1..], tag, attribute },
-                    Some('\'') => TokenizerState::AttributeValueSingleQuoted { input: &input[1..], tag, attribute },
-                    Some('>') => todo!(),
-                    _ => TokenizerState::AttributeValueUnquoted{ input, tag, attribute },
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
+                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
+                    Some('>') => {
+                        tokens.push_back(Token::Tag(tag));
+                        TokenizerState::Data { input: &input[1..] }
+                    }
+                    Some(_) => todo!()
+                }
+            }
+            TokenizerState::AttributeName { input, tag, mut attribute } => {
+                match input.chars().nth(0) { 
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ' | '/' | '>') | None => {
+                        TokenizerState::AfterAttributeName { input, tag, attribute }
+                    },
+                    Some('=') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
+                    Some('\0') => todo!(),
+                    Some('"' | '\'' | '<') => todo!(),
+                    Some(ch) => {
+                        attribute.name.push(ch);
+                        TokenizerState::AttributeName { input: &input[1..], tag, attribute }
+                    }
                 }
             }
             TokenizerState::AttributeValueDoubleQuoted { input, mut tag, mut attribute } => {
@@ -275,7 +203,7 @@ impl<'a> TokenizerState<'a> {
                     }
                 }
             }
-            TokenizerState::AfterAttributeValueQuoted { input, tag } => {
+            TokenizerState::BeforeAttributeName { input, tag } => {
                 match input.chars().nth(0) {
                     None => todo!(),
                     Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
@@ -283,12 +211,84 @@ impl<'a> TokenizerState<'a> {
                     Some('>') => {
                         tokens.push_back(Token::Tag(tag));
                         TokenizerState::Data { input: &input[1..] }
+                    },
+                    Some('=') => todo!(),
+                    Some(_) => {
+                        let attribute = Attribute::new();
+                        TokenizerState::AttributeName { input, tag, attribute }
+                    }
+                }
+            }
+            TokenizerState::BeforeAttributeValue { input, tag, attribute } => {
+                match input.chars().nth(0) {
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeValue { input: &input[1..], tag, attribute },
+                    Some('"') => TokenizerState::AttributeValueDoubleQuoted { input: &input[1..], tag, attribute },
+                    Some('\'') => TokenizerState::AttributeValueSingleQuoted { input: &input[1..], tag, attribute },
+                    Some('>') => todo!(),
+                    _ => TokenizerState::AttributeValueUnquoted{ input, tag, attribute },
+                }
+            }
+            TokenizerState::Data { input } => {
+                match input.chars().nth(0) {
+                    None => {
+                        tokens.push_back(Token::EOF);
+                        TokenizerState::EOF
+                    },
+                    Some('&') => todo!(),
+                    Some('<') => TokenizerState::TagOpen { input: &input[1..] },
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        tokens.push_back(Token::Char(ch));
+                        TokenizerState::Data { input: &input[1..] }
+                    }
+                }
+            }
+            TokenizerState::EndTagOpen { input } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some(ch) if matches!(ch, 'a'..'z' | 'A'..'Z') => TokenizerState::TagName { input, tag: Tag::new(TagKind::End) },
+                    Some(_) => todo!()
+                }
+            }
+            TokenizerState::EOF => {
+                panic!("Cannot call TokenizerState.step with EOF state");
+            }
+            TokenizerState::SelfClosingStartTag { input, mut tag } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('>') => {
+                        tag.self_closing = true;
+                        tokens.push_back(Token::Tag(tag));
+                        TokenizerState::Data { input: &input[1..] }
                     }
                     Some(_) => todo!()
                 }
-            },
-            TokenizerState::EOF => {
-                panic!("Cannot call TokenizerState.step with EOF state");
+            }
+            TokenizerState::TagName { input, mut tag } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('\t' | '\u{0a}' | '\u{0c}' | ' ') => TokenizerState::BeforeAttributeName { input: &input[1..], tag },
+                    Some('/') => TokenizerState::SelfClosingStartTag { input: &input[1..], tag } ,
+                    Some('>') => {
+                        tokens.push_back(Token::Tag(tag));
+                        TokenizerState::Data { input: &input[1..] }
+                    },
+                    Some('\0') => todo!(),
+                    Some(ch) => {
+                        tag.name.push(ch.to_ascii_lowercase());
+                        TokenizerState::TagName { input: &input[1..], tag }
+                    }
+                }
+            }
+            TokenizerState::TagOpen { input } => {
+                match input.chars().nth(0) {
+                    None => todo!(),
+                    Some('!') => todo!(),
+                    Some('/') => TokenizerState::EndTagOpen { input: &input[1..] },
+                    Some('?') => todo!(),
+                    Some(ch) if matches!(ch, 'a'..'z' | 'A'..'Z') => TokenizerState::TagName { input, tag: Tag::new(TagKind::Start) },
+                    Some(_) => todo!()
+                }
             }
         }
     }
