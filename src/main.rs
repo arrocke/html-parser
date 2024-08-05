@@ -1,24 +1,24 @@
-use crate::tokenizer::Tokenizer;
+use parser::parse;
 
 mod tokenizer;
+mod parser;
 
 fn main() {
     let input = "
         <!DOCTYPE html>
-        <head>
-            <title>Register</title>
-        </head>
-        <body>
-            <form method='POST' action='/form' >
-                <label for=email >Email</label>
-                <input id=email name=email type=email />
-                <button>Submit</button>
-            </form>
-        </body>
+        <html>
+            <head>
+                <title>Register</title>
+            </head>
+            <body>
+                <form method='POST' action='/form' >
+                    <label for=email >Email</label>
+                    <input id=email name=email type=email />
+                    <button>Submit</button>
+                </form>
+            </body>
+        </html>
     " ;
-    let tokenizer = Tokenizer::new(input);
 
-    for token in tokenizer {
-        println!("{:?}", token);
-    }
+    parse(input);
 }
