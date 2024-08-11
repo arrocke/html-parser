@@ -5,3 +5,12 @@ version = 3
 [[package]]
 name = "html-parser"
 version = "0.1.0"
+dependencies = [
+ "rctree",
+]
+
+[[package]]
+name = "rctree"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e03e7866abec1101869ffa8e2c8355c4c2419d0214ece0cc3e428e5b94dea6e9"

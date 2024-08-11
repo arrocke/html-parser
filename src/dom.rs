@@ -1,53 +1,72 @@
-use std::collections::HashMap;
-
-pub struct Arena<T> {
-    next_id: i64,
-    node_list: HashMap<i64, Node<T>>
+pub enum NodeType {
+    DocumentNode
 }
 
-impl<T> Arena<T> {
-    pub fn new() -> Arena<T> {
-        Arena {
-            next_id: 0,
-            node_list: HashMap::new()
-        }
-    }
+#[allow(dead_code)]
+pub trait Node {
+    fn node_type(&self) -> NodeType;
+    fn node_name(&self) -> String;
+    fn owner_document(&self) -> Option<impl Document>;
+    fn base_uri(&self) -> String;
+    fn is_connected(&self) -> bool;
+    fn parent_node(&self) -> Option<impl Node>;
+    fn first_child(&self) -> Option<impl Node>;
+    fn next_sibling(&self) -> Option<impl Node>;
+    fn append_child<T>(&self, child: _Node<T>);
+}
 
-    pub fn node(&mut self, data: T) -> &mut Node<T> {
-        let id = self.next_id;
-        let node = Node {
-            id,
-            parent: None,
-            children: vec![],
-            data
-        };
-        self.next_id += 1;
-        self.node_list.insert(id, node);
-        self.node_list.get_mut(&id).unwrap()
-    }
+#[allow(dead_code)]
+pub trait Document : Node {
+    fn base_url(&self) -> String;
+}
 
-    pub fn find(&mut self, id: &i64) -> Option<&mut Node<T>> {
-        self.node_list.get_mut(id)
-    }
+pub type _Node<T> = rctree::Node<T>;
 
-    pub fn detach(&mut self, child_id: &i64) {
-        let Some(prev_parent_id) = child.parent else { return };
-        let Some(prev_parent) = self.find(&prev_parent_id) else { return };
-        let Some(pos) = prev_parent.children.iter().position(|x| *x == child.id) else { return };
-        prev_parent.children.remove(pos);
-    }
+pub struct DocumentData {
+    url: String,
+}
+pub type DocumentNode = _Node<DocumentData>;
 
-    pub fn append(&mut self, parent: &mut Node<T>, child: &mut Node<T>) {
-        self.detach(child);
-        child.parent = Some(parent.id);
-        parent.children.push(child.id);
+impl Document for DocumentNode {
+    fn base_url<'a>(&'a self) -> String {
+        self.borrow().url.clone()
     }
 }
 
-pub struct Node<T> {
-    id: i64,
-    parent: Option<i64>,
-    children: Vec<i64>,
-    data: T
-}
+impl Node for DocumentNode {
+    fn node_type(&self) -> NodeType {
+        NodeType::DocumentNode
+    }
 
+    fn node_name(&self) -> String {
+        String::from("#document")
+    }
+
+    fn owner_document(&self) -> Option<impl Document> {
+        Some(self.clone())
+    }
+
+    fn base_uri(&self) -> String {
+        self.base_url()
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn parent_node(&self) -> Option<impl Node> {
+        self.parent()
+    }
+
+    fn first_child(&self) -> Option<impl Node> {
+        self.first_child()    
+    }
+
+    fn next_sibling(&self) -> Option<impl Node> {
+        self.next_sibling()    
+    }
+
+    fn append_child<T>(&self, child: _Node<T>) {
+        self.append(child);
+    }
+}
