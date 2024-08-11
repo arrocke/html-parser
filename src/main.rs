@@ -1,9 +1,17 @@
+use dom::Arena;
 use parser::parse;
 
 mod tokenizer;
 mod parser;
+mod dom;
 
 fn main() {
+    let mut arena = Arena::new();
+    let mut html = arena.node("html");
+    let mut head = arena.node("head");
+    arena.append(&mut html, &mut head);
+
+    /*
     let input = "
         <!DOCTYPE html>
         <html>
@@ -21,4 +29,5 @@ fn main() {
     " ;
 
     parse(input);
+    */
 }
